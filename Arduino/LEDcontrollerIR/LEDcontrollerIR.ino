@@ -565,7 +565,7 @@ void PlayEffect()
     EffectSteep--;
     if (EffectSteep<1)
     {
-      EffectSteep= LED_COUNT-1;
+      EffectSteep= LED_COUNT;
       //EffectFase++;
       //randomSeed(EffectFase*EffectFase);
       curr=random(255);
@@ -600,7 +600,7 @@ void PlayEffect()
     LEDData[EffectSteep].r= EffectFase;
     LEDData[EffectSteep].g= EffectFase;
     LEDData[EffectSteep].b= EffectFase++;
-    EffectSteep= random(LED_COUNT-1);
+    EffectSteep= random(LED_COUNT);
     LEDData[EffectSteep].r= LEDData[EffectSteep].r*2;
     LEDData[EffectSteep].g= LEDData[EffectSteep].g*2;
     LEDData[EffectSteep].b= LEDData[EffectSteep].b*2;
@@ -610,7 +610,7 @@ void PlayEffect()
     LEDData[EffectSteep].r= LEDData[EffectSteep].r/2;
     LEDData[EffectSteep].g= LEDData[EffectSteep].g/2;
     LEDData[EffectSteep].b= LEDData[EffectSteep].b/2;
-    EffectSteep= random(LED_COUNT-1);
+    EffectSteep= random(LED_COUNT);
     LEDData[EffectSteep].r= LEDData[EffectSteep].r*2;
     LEDData[EffectSteep].g= LEDData[EffectSteep].g*2;
     LEDData[EffectSteep].b= LEDData[EffectSteep].b*2;  
