@@ -2,7 +2,7 @@
 ---------------------------------------------------------------------------------
  LED WS2812b controller with IR remote (2014.12.08)
  by dMb (dbbrzozowski (at) tlen.pl)
- 
+ https://github.com/dMbski/IC_LED
  ---------------------------------------------------------------------------------                                          
  Written in a hurry for Arduino 1.0.6 + board with ATmega328  
  
@@ -28,6 +28,18 @@
 #define  BNEXT  1
 #define  BPREV  2
 #define  BMENU  4
+
+//definitions for EEPROM
+#define EEMARK  0xEE
+struct ParamEE {
+  byte EEmark;
+  byte EEno;    //seting are saved in 5 succeeding locations
+  byte EEBrightnes;
+  byte EEEffect;
+  int  EEPeriod;
+};
+ParamEE Param ={
+  EEMARK, 0,0,0,0};
 
 //definitions for IR receiver
 #define RECV_PIN  11
@@ -65,7 +77,7 @@ byte LEDBright= 160;  //default brightnes at start
 #ifdef DEBUGMODEON        //serial print enable
 #define PRINT_START Serial.begin(57600)
 #define PRINTD(x)    Serial.print(F(x))    //to disable F() macro just delete it
-#define PRINTH(x)    Serial.print("\r\n"); Serial.print(x, HEX)
+#define PRINTVARH(x, y)    Serial.print(x); Serial.print(y, HEX)
 #define PRINTVAR(x, v)  Serial.print(x); Serial.print(v)
 #else                     //serial print disable
 #define PRINTD(x)
@@ -100,7 +112,7 @@ void BlinkShort();
 void PlayEffect();
 #define MAXEFFECT_PERIOD  1000
 #define MINEFFECT_PERIOD  75
-#define EFFECTS_COUNT  6            //how many effect is (last no at case in func playeffect)
+#define EFFECTS_COUNT  9            //how many effect is (last no at case in func playeffect)
 int EffectPeriod= MAXEFFECT_PERIOD; // millis to next step in effect and refresh leds
 
 //var to use in playeffect function
@@ -122,11 +134,18 @@ void setup()
 
   pinMode(LED_DATA_PIN, OUTPUT);
 
-  LEDS.addLeds<WS2812B, LED_DATA_PIN, GRB>(LEDData, LED_COUNT); 
+  LEDS.addLeds<WS2812B, LED_DATA_PIN, GRB>(LEDData, LED_COUNT); // here u can change other type of led ic see in FastLED
   SetColorAll(255, 255, 255);
   LEDS.setBrightness(LEDBright);
   LEDS.show();
-
+  //Dumb EEprom settings
+  Param.EEBrightnes= 55;
+  PRINTVAR(F("\r\n EEno: "), Param.EEno);
+  PRINTVARH(F("\tEEmark: "), Param.EEmark);
+  PRINTVAR(F("\r\nEEBrightnes: "), Param.EEBrightnes);
+  PRINTVAR(F("\tEEEffect: "), Param.EEEffect);
+  PRINTVAR(F("\tEEPeriod: "), Param.EEPeriod);
+  //Starting info printout
   PRINTD("\r\nLEDcontrollerIR Setup finish with:");
   PRINTVAR(F("\r\nLEDCount: "), LED_COUNT);
   PRINTVAR(F("\tLED Effects: "), EFFECTS_COUNT);
@@ -152,7 +171,7 @@ void loop()
   if (irrecv.decode(&results))
   {
     byte hbutton= BNONE;
-    //PRINTH(results.value);   //uncomment to get RAW IR code + DEBUGMODE
+    //PRINTVARH("\nIRcode=", results.value);   //uncomment to get RAW IR code + DEBUGMODE
     switch(results.value)    //add here IR commands for enhanced settings during playmode
     {
     case  IRCODE_BNEXT:
@@ -333,9 +352,18 @@ void loop()
           break;
         case 6:
           EffectSteep= LED_COUNT-1;
-          EffectFase= 0;
           EffectPeriod= 125;
-          break;          
+          break;
+        case  7:
+          EffectSteep= LED_COUNT-1;
+          EffectPeriod= 125;
+          break;  
+        case  8:
+          SetColorAll(16, 16, 16);
+          break; 
+        case  9:
+          SetColorAll(random(127), random(127), random(127));
+          break;           
         }
         PRINTD("\r\nLEDEffect begin.");
         PRINTVAR("\tEffectPeriod=", EffectPeriod);      
@@ -385,13 +413,21 @@ byte GetNextLED(byte no)
 {
   byte ret;
   ret = no+1;
-  if (ret>(LED_COUNT-1)) ret=0;
+  if (ret>(LED_COUNT-1)) ret=(LED_COUNT-1);
   return ret;
 }
-
+byte GetPrevLED(int no)
+{
+  no--;
+  if (no < 1) return 0;
+  else return (byte(no));
+}
 void PlayEffect()
 {
   if (millis()< RefreshLEDAt)  return;
+  static byte curr;
+  static byte curg;
+  static byte curb;
   switch(LEDEffect)
   {
   case 0:                                      //random led color change with a gleam of all leds
@@ -413,17 +449,20 @@ void PlayEffect()
   case 1:                                      //reds with one led march
     SetColorAll(128, 0, 0);
     LEDData[EffectSteep].r= 255;
-    EffectSteep= GetNextLED(EffectSteep);  
+    if (EffectSteep==(LED_COUNT-1)) EffectSteep=0;
+    else EffectSteep= GetNextLED(EffectSteep);  
     break;
   case 2:                                      //greens with one led march
     SetColorAll(0, 128, 0);
     LEDData[EffectSteep].g= 255;
-    EffectSteep= GetNextLED(EffectSteep);  
+    if (EffectSteep==(LED_COUNT-1)) EffectSteep=0;
+    else EffectSteep= GetNextLED(EffectSteep);  
     break;
   case 3:                                      //blues with one led march
     SetColorAll(0, 0, 128);
     LEDData[EffectSteep].b= 255;
-    EffectSteep= GetNextLED(EffectSteep);
+    if (EffectSteep==(LED_COUNT-1)) EffectSteep=0;
+    else EffectSteep= GetNextLED(EffectSteep);
     break;  
   case 4:                                      //slooow all leds collors fade with random led flickering
     for (byte i=0; i<LED_COUNT; i++)
@@ -490,13 +529,13 @@ void PlayEffect()
   case 5:                                        //all random to one color from center+ bright fade
     byte ledst;
     ledst= EffectSteep/2;
-    LEDData[(LED_COUNT/2)-ledst].r= (LEDData[(LED_COUNT/2)-ledst].r+LEDData[(LED_COUNT/2)].r)/2;
-    LEDData[(LED_COUNT/2)-ledst].g= LEDData[(LED_COUNT/2)].g;
-    LEDData[(LED_COUNT/2)-ledst].b= LEDData[(LED_COUNT/2)].b;
+    LEDData[(LED_COUNT/2)-ledst-1].r= curr;
+    LEDData[(LED_COUNT/2)-ledst-1].g= curg;
+    LEDData[(LED_COUNT/2)-ledst-1].b= curb;
 
-    LEDData[(LED_COUNT/2)+ledst].r= (LEDData[(LED_COUNT/2)+ledst].r+LEDData[(LED_COUNT/2)].r)/2;
-    LEDData[(LED_COUNT/2)+ledst].g= LEDData[(LED_COUNT/2)].g;
-    LEDData[(LED_COUNT/2)+ledst].b= LEDData[(LED_COUNT/2)].b;   
+    LEDData[(LED_COUNT/2)+ledst].r= curr;
+    LEDData[(LED_COUNT/2)+ledst].g= curg;
+    LEDData[(LED_COUNT/2)+ledst].b= curb;   
     byte brighst;
     brighst= LEDBright/(LED_COUNT/2);
     if (EffectDir) LEDS.setBrightness(2+brighst*EffectSteep);
@@ -513,31 +552,79 @@ void PlayEffect()
         LEDData[i].g= random(255);
         LEDData[i].b= 16+i;
       }
-      LEDData[(LED_COUNT/2)].b= random(255);
-      LEDData[(LED_COUNT/2)].r= random(255);
+      curr= random(255);
+      curg= random(255);
+      curb= random(255);
       //randomSeed(LEDData[(LED_COUNT/2)].b+EffectSteep);
     }
     break;//end effect 5 
   case 6:                                            //last led random collor to first led march
-    LEDData[EffectSteep-1].r= LEDData[EffectSteep].r;
-    LEDData[EffectSteep-1].g= LEDData[EffectSteep].g;
-    LEDData[EffectSteep-1].b= LEDData[EffectSteep].b;
+    LEDData[EffectSteep-1].r= curr;
+    LEDData[EffectSteep-1].g= curg;
+    LEDData[EffectSteep-1].b= curb;
     EffectSteep--;
     if (EffectSteep<1)
     {
       EffectSteep= LED_COUNT-1;
-      EffectFase++;
+      //EffectFase++;
       //randomSeed(EffectFase*EffectFase);
-      LEDData[EffectSteep].r=random(255);
-      LEDData[EffectSteep].g=random(255);
-      LEDData[EffectSteep].b=random(255);
+      curr=random(255);
+      curg=random(255);
+      curb=random(255);
     }
-    break;//end effect 6  
+    break;//end effect 6
+  case 7:                                            //fade G +rand RB  from random position to last + var speed
+    if (EffectSteep >= LED_COUNT)
+    {
+      EffectSteep= random(LED_COUNT);
+      curr=random(255);
+      curg=EffectFase++;
+      curb=random(255);
+      EffectPeriod= MINEFFECT_PERIOD+ EffectSteep*5;    
+    }
+    else
+    {
+      LEDData[EffectSteep].r= curr;
+      LEDData[EffectSteep].g= curg;
+      LEDData[EffectSteep].b= curb;
+      LEDData[GetNextLED(EffectSteep)].r= curr*2;
+      LEDData[GetNextLED(EffectSteep)].g= curg*2;
+      LEDData[GetNextLED(EffectSteep)].b= curb*2;
+      LEDData[GetPrevLED(EffectSteep)].r= curr/2;
+      LEDData[GetPrevLED(EffectSteep)].g= curg/2;
+      LEDData[GetPrevLED(EffectSteep)].b= curb/2;      
+      EffectSteep++;
+    }
+    break;//end effect 7 
+  case  8:                                            //fade white +random glem
+    LEDData[EffectSteep].r= EffectFase;
+    LEDData[EffectSteep].g= EffectFase;
+    LEDData[EffectSteep].b= EffectFase++;
+    EffectSteep= random(LED_COUNT-1);
+    LEDData[EffectSteep].r= LEDData[EffectSteep].r*2;
+    LEDData[EffectSteep].g= LEDData[EffectSteep].g*2;
+    LEDData[EffectSteep].b= LEDData[EffectSteep].b*2;
+
+    break;//end effect 8 
+  case  9:                                            //random color, press nexteffect to change next +random glem
+    LEDData[EffectSteep].r= LEDData[EffectSteep].r/2;
+    LEDData[EffectSteep].g= LEDData[EffectSteep].g/2;
+    LEDData[EffectSteep].b= LEDData[EffectSteep].b/2;
+    EffectSteep= random(LED_COUNT-1);
+    LEDData[EffectSteep].r= LEDData[EffectSteep].r*2;
+    LEDData[EffectSteep].g= LEDData[EffectSteep].g*2;
+    LEDData[EffectSteep].b= LEDData[EffectSteep].b*2;  
+    break;//end effect 9 
   }//end switch
 
   LEDS.show();
   RefreshLEDAt= millis()+EffectPeriod;
 }
+
+
+
+
+
 
 
 
