@@ -1,10 +1,12 @@
 /*
 ---------------------------------------------------------------------------------
- LED WS2812b controller with IR remote (2014.12.08)
- by dMb (dbbrzozowski (at) tlen.pl)
+ LED WS2812b controller with IR remote (CHRISTMAS TREE LIGHTS)
+ (2014.12.14) v0.3 by dMb (dbbrzozowski (at) tlen.pl)
  https://github.com/dMbski/IC_LED
  ---------------------------------------------------------------------------------                                          
  Written in a hurry for Arduino 1.0.6 + board with ATmega328  
+ 
+ Obviously there are some bugs and ugliness in code but it works!
  
  Needed and used libraries (BIG THX to its CREATORS):
  - FastLED version 3.000.002
@@ -15,7 +17,26 @@
  http://thijs.elenbaas.net/2012/07/extended-eeprom-library-for-arduino
  
  All copyrights belong to their respective owners.
- */
+ ---------------------------------------------------------------------------------
+ Connections:
+ Arduino Pin:    Connected to:
+ 11              RECV_PIN  11  - IR receiver data
+ 5               BUTTON_NEXT_PIN  5 - button3
+ 4               BUTTON_MENU_PIN  4 - button2
+ 3               BUTTON_PREV_PIN  3 - button1
+ Buttons are pulldown to ground -0 and 1 when pressed
+ Usage:
+ Press MenuButton:
+ Setting Mode    Times
+ MODE_SETBR      10  Goes to setting up brightnes (Buttons Next/Prev to change)
+ MODE_SETACH     20  Goes to disable autochange effect (RED color) or change timeout (GREEN). BLUE LED mean +30sec (2 LEDs= 1 minute)
+ MENUCONFIRMSAVE  5  When in above modes, confirms save to eeprom
+ When none of buttons is pressed for MODE_TIMEOUT  15000 (millis), MODE_PLAY - is enabled.
+ 
+ Sorry for too many xxGRISH here :-)
+ ***********************************************  Wesolych SWIAT !
+ ***********************************************  Merry Christmas !
+ ---------------------------------------------------------------------------------         */
 
 
 #include <IRremote.h>
@@ -30,16 +51,14 @@
 #define  BMENU  4
 
 //definitions for EEPROM
-#define EEMARK  0xEE
 struct ParamEE {
-  byte EEmark;
-  byte EEno;    //seting are saved in 5 succeeding locations
+  byte EEAutoChange;
   byte EEBrightnes;
   byte EEEffect;
   int  EEPeriod;
+  long EEAutoChangePeriod;
 };
-ParamEE Param ={
-  EEMARK, 0,0,0,0};
+ParamEE Param;
 
 //definitions for IR receiver
 #define RECV_PIN  11
@@ -53,7 +72,6 @@ decode_results results;
 #define IRCODE_SLOWER  0x40FF2AD5
 #define IRCODE_LIGHTER  0x40FF28D7
 #define IRCODE_DARKER   0x40FFE817
-#define IRCODE_ENTSET
 #define IRCODE_SAVBRIGHT
 #define IRCODE_SAVEEFFECT
 #define IRCODE_REPEAT  0xFFFFFFFF
@@ -65,7 +83,7 @@ byte IRButton= BNONE;
 #define LED_DATA_PIN  13
 //add clock pin def for other IC LEDs
 
-byte LEDEffect= 0;    //default effect at start
+byte LEDEffect;      //Effect to play
 byte LEDEffectChange= true;
 unsigned long RefreshLEDAt=0;
 struct CRGB LEDData[LED_COUNT];
@@ -73,13 +91,13 @@ byte LEDBright= 160;  //default brightnes at start
 
 
 //      program definitions
-#define DEBUGMODEON    //uncomment this for Serial.print
-#ifdef DEBUGMODEON        //serial print enable
+//#define DEBUGMODEON                        //uncomment this for Serial.print
+#ifdef DEBUGMODEON         //serial print enabled
 #define PRINT_START Serial.begin(57600)
 #define PRINTD(x)    Serial.print(F(x))    //to disable F() macro just delete it
 #define PRINTVARH(x, y)    Serial.print(x); Serial.print(y, HEX)
 #define PRINTVAR(x, v)  Serial.print(x); Serial.print(v)
-#else                     //serial print disable
+#else                     //serial print disabled
 #define PRINTD(x)
 #define PRINTH(x)
 #define PRINTVAR(x, v)
@@ -93,13 +111,16 @@ byte LEDBright= 160;  //default brightnes at start
 byte ActiveButton = BNONE;   
 unsigned long ReadButtonAt=0;
 #define READING_PERIOD 150
+#define AUTOCHANGE_PERIOD_TICK  200  //when readingperiod=150, 400= 1 min
+long AutoChangeCount= AUTOCHANGE_PERIOD_TICK;      //just count down to next effect
 
 #define  MODE_PLAY  0        //normal mode -play bnext/bprev= effect change
 #define  MENUCONFIRMSAVE  5  //must be less then next-first speciall  mode
-#define  MODE_SETBR  10      //enter setting brightness (then save for default)
-#define  MODE_X      20      //test mode  
+#define  MODE_SETBR   10      //enter setting brightness (then save for default)
+#define  MODE_SETACH  20      //enter setting autochange (disabled -red, anabled+ timeout gren+blue)
 
 byte IsModeChange= false;
+byte IsAutoChange= true;
 
 byte RunMode= MODE_PLAY;
 byte BMenuCount= 0;     
@@ -138,19 +159,42 @@ void setup()
   SetColorAll(255, 255, 255);
   LEDS.setBrightness(LEDBright);
   LEDS.show();
+  //Load settings from eeprom
+  //TODO: EEPROM
+  EEPROM.readBlock(33, Param);
+
+  if ((Param.EEPeriod < MINEFFECT_PERIOD) || (Param.EEAutoChangePeriod< AUTOCHANGE_PERIOD_TICK))
+  {//save default settings to clean eeprom
+    Param.EEPeriod= MINEFFECT_PERIOD*2;
+    Param.EEBrightnes= 128;
+    Param.EEAutoChange= 1;
+    Param.EEEffect= 0;
+    Param.EEAutoChangePeriod= AUTOCHANGE_PERIOD_TICK;
+    EEPROM.updateBlock(33, Param);
+    EEPROM.readBlock(33, Param);  
+  }
+
   //Dumb EEprom settings
-  Param.EEBrightnes= 55;
-  PRINTVAR(F("\r\n EEno: "), Param.EEno);
-  PRINTVARH(F("\tEEmark: "), Param.EEmark);
   PRINTVAR(F("\r\nEEBrightnes: "), Param.EEBrightnes);
   PRINTVAR(F("\tEEEffect: "), Param.EEEffect);
   PRINTVAR(F("\tEEPeriod: "), Param.EEPeriod);
+  PRINTVAR(F("\n\tEEAutoChange: "), Param.EEAutoChange);
+  PRINTVAR(F("\tEEAutoChangePeriod: "), Param.EEAutoChangePeriod);
+
+  LEDBright= Param.EEBrightnes;
+  EffectPeriod= Param.EEPeriod; 
+  IsAutoChange= Param.EEAutoChange;
+  LEDEffect= Param.EEEffect;
+  AutoChangeCount= Param.EEAutoChangePeriod;
   //Starting info printout
   PRINTD("\r\nLEDcontrollerIR Setup finish with:");
   PRINTVAR(F("\r\nLEDCount: "), LED_COUNT);
   PRINTVAR(F("\tLED Effects: "), EFFECTS_COUNT);
-  PRINTVAR(F("\r\nLEDBright="), LEDBright);
-  PRINTVAR(F("\r\nLEDEffect="), LEDEffect);  
+  PRINTVAR(F("\nLEDBright="), LEDBright);
+  PRINTVAR(F("\nLEDEffect="), LEDEffect);
+  PRINTVAR(F("\nIsAutoChange="), IsAutoChange);
+  PRINTVAR(F("\nEffectPeriod="), EffectPeriod);
+  PRINTVAR(F("\tAutoChangeCount="), AutoChangeCount);
 }//end setup
 
 void loop() 
@@ -163,8 +207,20 @@ void loop()
     if(digitalRead(BUTTON_NEXT_PIN)) hbutton=  BNEXT;
     if(digitalRead(BUTTON_MENU_PIN)) hbutton=  hbutton+BMENU;
     if(digitalRead(BUTTON_PREV_PIN)) hbutton=  hbutton+BPREV;
-    ActiveButton= hbutton;   
-    ReadButtonAt= millis()+READING_PERIOD;    
+    if (hbutton==BNONE)
+    {
+      if (RunMode == MODE_PLAY) AutoChangeCount--;
+      if (AutoChangeCount< 1)
+      {
+        if (IsAutoChange)  hbutton= BPREV;
+        AutoChangeCount= Param.EEAutoChangePeriod;
+        PRINTD("\nAutoChangePeriod Timeout");
+      }
+    }
+    else  AutoChangeCount= Param.EEAutoChangePeriod;
+    ActiveButton= hbutton; 
+    ReadButtonAt= millis()+READING_PERIOD;
+
   }//end if readbuttonat
 
   //ir command reading
@@ -176,12 +232,15 @@ void loop()
     {
     case  IRCODE_BNEXT:
       hbutton= BNEXT;
+      AutoChangeCount= Param.EEAutoChangePeriod;
       break;
     case  IRCODE_BMENU:
       hbutton=  BMENU;
+      AutoChangeCount= Param.EEAutoChangePeriod;
       break;
     case  IRCODE_BPREV:
       hbutton=  BPREV;
+      AutoChangeCount= Param.EEAutoChangePeriod;
       break;
     case  IRCODE_FASTER:
       EffectPeriod= EffectPeriod-5;
@@ -226,7 +285,7 @@ void loop()
         {
           RunMode= MODE_SETBR;
           IsModeChange= true;
-          PRINTD("\r\nEnter mode MODE_SETBR...");
+          PRINTD("\r\n...MODE_SETBR...");
           BlinkShort();
         }
         break;
@@ -237,16 +296,34 @@ void loop()
           RunMode= MODE_PLAY;
           IsModeChange= true;
           PRINTD("\r\nSave to EEPROM from mode MODE_SETBR..."); 
+          //TODO: EEPROM
+          Param.EEBrightnes= LEDBright;
+          Param.EEPeriod= EffectPeriod;  //temp for better options?
+          EEPROM.updateBlock(33, Param);
+          EEPROM.readBlock(33, Param); 
           BlinkShort();          
         }
-        else if (BMenuCount== MODE_X)
+        else if (BMenuCount== MODE_SETACH)
         {
-          RunMode=MODE_X;
+          RunMode=MODE_SETACH;
+          PRINTD("...MODE_SETACH...");  //
           IsModeChange= true;
         }
         break;
-      case  MODE_X:
-        PRINTD("Enter MODE_X");  //for example
+      case  MODE_SETACH:        
+        if (BMenuCount== MENUCONFIRMSAVE)
+        {
+          BMenuCount= 0;
+          RunMode= MODE_PLAY;
+          IsModeChange= true;
+          PRINTD("\r\nSave to EEPROM from mode MODE_SETACH...");
+          //TODO: EEPROM
+          Param.EEAutoChange= IsAutoChange; 
+          EEPROM.updateBlock(33, Param);
+          EEPROM.readBlock(33, Param); 
+          AutoChangeCount= Param.EEAutoChangePeriod;
+          BlinkShort();          
+        }        
         break;
       }  
     }//end if bmenu
@@ -266,6 +343,16 @@ void loop()
         LEDS.show(); 
         PRINTVAR("\r\nLEDBright:", LEDBright);         
         break;
+      case  MODE_SETACH:
+        Param.EEAutoChangePeriod= Param.EEAutoChangePeriod+ AUTOCHANGE_PERIOD_TICK;
+        if ( Param.EEAutoChangePeriod > AUTOCHANGE_PERIOD_TICK)
+        {
+          IsAutoChange= true;
+        }
+        PRINTVAR("\r\nAutoChange:", IsAutoChange);
+        PRINTVAR("\tAutoChangePeriod:", 30*(Param.EEAutoChangePeriod/AUTOCHANGE_PERIOD_TICK));
+        IsModeChange= true;      
+        break;        
       }//end switch
     }//end if bnext 
     if ((ActiveButton==BPREV) || (IRButton==BPREV))
@@ -284,6 +371,17 @@ void loop()
         LEDS.show();
         PRINTVAR("\r\nLEDBright:", LEDBright);         
         break;
+      case  MODE_SETACH:
+        Param.EEAutoChangePeriod= Param.EEAutoChangePeriod- AUTOCHANGE_PERIOD_TICK;
+        if ( Param.EEAutoChangePeriod < AUTOCHANGE_PERIOD_TICK)
+        {
+          Param.EEAutoChangePeriod= AUTOCHANGE_PERIOD_TICK;
+          IsAutoChange= false;
+        }
+        PRINTVAR("\r\nAutoChange:", IsAutoChange);
+        PRINTVAR("\tAutoChangePeriod (sec):", 30*(Param.EEAutoChangePeriod/AUTOCHANGE_PERIOD_TICK));
+        IsModeChange= true;      
+        break;        
       }//end switch        
     }//end if bprev       
     ActiveButton= BNONE;  //buttons was processed
@@ -303,6 +401,7 @@ void loop()
         RunMode= MODE_PLAY;
         IsModeChange= true;
         BMenuCount =0;
+        AutoChangeCount= Param.EEAutoChangePeriod;
         PRINTD("\r\nExit to MODE_PLAY.");
         BlinkShort();
         BlinkShort();
@@ -327,7 +426,7 @@ void loop()
         BlinkShort();
         RefreshLEDAt= millis();
         LEDEffectChange= false;
-        EffectPeriod= 250;
+        EffectPeriod= Param.EEPeriod;
         EffectSteep= 0;
         EffectFase= 0;
         EffectDir= 1;
@@ -343,20 +442,17 @@ void loop()
         case 3:
           break;
         case 4:
-          EffectFase= 0;
-          EffectPeriod= 333;
+          EffectFase= random(8);
+          EffectSteep= random(255);
           break;
         case 5:
           EffectSteep= 1;
-          EffectPeriod= 125;
           break;
         case 6:
           EffectSteep= LED_COUNT-1;
-          EffectPeriod= 125;
           break;
         case  7:
           EffectSteep= LED_COUNT-1;
-          EffectPeriod= 125;
           break;  
         case  8:
           SetColorAll(16, 16, 16);
@@ -379,7 +475,23 @@ void loop()
       IsModeChange= false;
     }  
     break;
-  case  MODE_X:
+  case  MODE_SETACH:  //spec mode to setup autoeffectchange
+    if (IsModeChange)
+    {
+      if (IsAutoChange)
+      {
+        SetColorAll(0, 32, 0);
+        byte maxi= (Param.EEAutoChangePeriod/AUTOCHANGE_PERIOD_TICK);
+        if (maxi >= LED_COUNT) maxi= LED_COUNT;
+        for (byte i= 0; i< maxi; i++)
+        {
+          LEDData[i].b= 255;             
+        }
+      }
+      else  SetColorAll(255, 0, 0);
+      LEDS.show();
+      IsModeChange= false;
+    };
     break;
   }
 }// end main loop
@@ -580,6 +692,15 @@ void PlayEffect()
       curr=random(255);
       curg=EffectFase++;
       curb=random(255);
+      if (EffectFase==255)
+      {
+        for(byte i= 0; i<LED_COUNT; i++)
+        {
+          LEDData[i].r= LEDData[i].r/(i+2);
+          LEDData[i].g= LEDData[i].g/(i+2);
+          LEDData[i].b= LEDData[i].b/(i+2);
+        }
+      }
       EffectPeriod= MINEFFECT_PERIOD+ EffectSteep*5;    
     }
     else
@@ -599,27 +720,36 @@ void PlayEffect()
   case  8:                                            //fade white +random glem
     LEDData[EffectSteep].r= EffectFase;
     LEDData[EffectSteep].g= EffectFase;
-    LEDData[EffectSteep].b= EffectFase++;
+    LEDData[EffectSteep].b= EffectFase;
+    EffectFase++;
     EffectSteep= random(LED_COUNT);
     LEDData[EffectSteep].r= LEDData[EffectSteep].r*2;
     LEDData[EffectSteep].g= LEDData[EffectSteep].g*2;
     LEDData[EffectSteep].b= LEDData[EffectSteep].b*2;
-
     break;//end effect 8 
   case  9:                                            //random color, press nexteffect to change next +random glem
     LEDData[EffectSteep].r= LEDData[EffectSteep].r/2;
     LEDData[EffectSteep].g= LEDData[EffectSteep].g/2;
     LEDData[EffectSteep].b= LEDData[EffectSteep].b/2;
     EffectSteep= random(LED_COUNT);
-    LEDData[EffectSteep].r= LEDData[EffectSteep].r*2;
-    LEDData[EffectSteep].g= LEDData[EffectSteep].g*2;
-    LEDData[EffectSteep].b= LEDData[EffectSteep].b*2;  
+    LEDData[EffectSteep].r= LEDData[EffectSteep].r+EffectFase;
+    LEDData[EffectSteep].g= LEDData[EffectSteep].g+EffectFase;
+    LEDData[EffectSteep].b= LEDData[EffectSteep].b+EffectFase; 
+    EffectFase ++;
     break;//end effect 9 
   }//end switch
 
   LEDS.show();
   RefreshLEDAt= millis()+EffectPeriod;
 }
+
+
+
+
+
+
+
+
 
 
 
