@@ -458,7 +458,7 @@ void loop()
           SetColorAll(16, 16, 16);
           break; 
         case  9:
-          SetColorAll(random(127), random(127), random(127));
+          SetColorAll(random(200), random(64), random(8));
           break;           
         }
         PRINTD("\r\nLEDEffect begin.");
@@ -727,21 +727,43 @@ void PlayEffect()
     LEDData[EffectSteep].g= LEDData[EffectSteep].g*2;
     LEDData[EffectSteep].b= LEDData[EffectSteep].b*2;
     break;//end effect 8 
-  case  9:                                            //random color, press nexteffect to change next +random glem
-    LEDData[EffectSteep].r= LEDData[EffectSteep].r/2;
-    LEDData[EffectSteep].g= LEDData[EffectSteep].g/2;
-    LEDData[EffectSteep].b= LEDData[EffectSteep].b/2;
+  case  9:                                            //fire! 8-/
     EffectSteep= random(LED_COUNT);
-    LEDData[EffectSteep].r= LEDData[EffectSteep].r+EffectFase;
-    LEDData[EffectSteep].g= LEDData[EffectSteep].g+EffectFase;
-    LEDData[EffectSteep].b= LEDData[EffectSteep].b+EffectFase; 
-    EffectFase ++;
+    if (EffectSteep< (LED_COUNT/3))
+    {
+      LEDData[EffectSteep].r= random(200);
+      LEDData[EffectSteep].g= random(128);
+      LEDData[EffectSteep].b= random(EffectFase);
+      EffectFase++;
+      //LEDS.setBrightness(random(LEDBright/2, LEDBright));
+      //randomSeed(EffectFase*EffectFase);
+      
+    }
+      EffectPeriod= MINEFFECT_PERIOD+ EffectSteep*5;
+      do {
+        if (EffectSteep< (LED_COUNT/3)) EffectSteep= (LED_COUNT/3);
+        curg= EffectSteep-(LED_COUNT/3);
+        curr= GetPrevLED(curg);
+        curb= GetNextLED(curg);
+        int tc= LEDData[curr].r+LEDData[curg].r+LEDData[curb].r;
+        tc= (tc+ LEDData[EffectSteep].r)/4;
+        LEDData[EffectSteep].r= tc;
+        tc= LEDData[curr].g+LEDData[curg].g+LEDData[curb].g;
+        tc= (tc+LEDData[EffectSteep].g)/4;
+        LEDData[EffectSteep].g= tc;
+        tc= LEDData[curr].b +LEDData[curg].b +LEDData[curb].b;
+        tc= (tc+LEDData[EffectSteep].b)/4;
+        LEDData[EffectSteep].b= tc;
+        EffectSteep= EffectSteep+ (LED_COUNT/3);
+      }
+      while (EffectSteep<LED_COUNT);
     break;//end effect 9 
   }//end switch
 
   LEDS.show();
   RefreshLEDAt= millis()+EffectPeriod;
 }
+
 
 
 
