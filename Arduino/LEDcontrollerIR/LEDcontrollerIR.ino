@@ -1,8 +1,11 @@
 /*
 ---------------------------------------------------------------------------------
  LED WS2812b controller with IR remote (CHRISTMAS TREE LIGHTS)
- (2014.12.14) v0.3 by dMb (dbbrzozowski (at) tlen.pl)
+ (2014.12) by dMb (dbbrzozowski (at) tlen.pl)
  https://github.com/dMbski/IC_LED
+ 
+ this is Work IN PRogress version ;-) (Effects change, etc)
+ 
  ---------------------------------------------------------------------------------                                          
  Written in a hurry for Arduino 1.0.6 + board with ATmega328  
  
@@ -433,7 +436,7 @@ void loop()
         switch(LEDEffect)
         {
         case 0:
-          SetColorAll(208, 160, 64);
+          EffectSteep=1;
           break;
         case 1:
           break;
@@ -458,7 +461,12 @@ void loop()
           SetColorAll(16, 16, 16);
           break; 
         case  9:
-          SetColorAll(random(200), random(64), random(8));
+          for(byte i= 0; i<LED_COUNT; i++)
+          {
+            LEDData[i].r= random(255);
+            LEDData[i].g= random(255);
+            LEDData[i].b= random(255);
+          }
           break;           
         }
         PRINTD("\r\nLEDEffect begin.");
@@ -540,23 +548,58 @@ void PlayEffect()
   static byte curr;
   static byte curg;
   static byte curb;
+  byte i;
   switch(LEDEffect)
   {
-  case 0:                                      //random led color change with a gleam of all leds
-    byte i;
-    i= random(LED_COUNT);
-    LEDData[i].r= EffectSteep+(128/LED_COUNT)*i;
-    LEDData[i].g= EffectSteep+LEDData[i].r-i;
-    LEDData[i].b= EffectSteep+LEDData[i].r/4-i;
-    EffectSteep++;
-    //randomSeed(i+LEDData[i].r+EffectSteep);
-    i= random(1, LED_COUNT);
-    LEDData[i].b= LEDData[i-1].b;
-    EffectPeriod= MINEFFECT_PERIOD+ i*10;
-    int nbr;
-    nbr= LEDBright;
-    nbr= nbr -(3-(i/3))*10;
-    LEDS.setBrightness(nbr);  
+  case 0:                                      //RGB pong
+    switch (EffectFase)
+    {
+    case 0:
+      curr= 255;
+      curg= 0;
+      curb= 0;
+      break;
+    case 1:
+      curr= 0;
+      curg= 255;
+      curb= 0;
+      break;
+    case 2:
+      curr= 0;
+      curg= 0;
+      curb= 255;
+      break;
+    case 3:
+      curr= 128;
+      curg= 128;
+      curb= 0;
+      break;
+    case 4:
+      curr= 0;
+      curg= 128;
+      curb= 128;
+      break;      
+    case 5:
+      curr= 128;
+      curg= 0;
+      curb= 128;
+      break;            
+    }//end switch
+    LEDData[EffectSteep].r= curr;
+    LEDData[EffectSteep].g= curg;
+    LEDData[EffectSteep].b= curb;
+    EffectSteep= EffectSteep+ EffectDir;
+    if (EffectSteep == 0)
+    {
+      EffectDir= 1;
+      EffectFase++;
+    }
+    else if (EffectSteep == (LED_COUNT-1))
+    {
+      EffectDir= -1;
+      EffectFase++;
+    }
+    if (EffectFase>5) EffectFase= 0;      
     break;
   case 1:                                      //reds with one led march
     SetColorAll(128, 0, 0);
@@ -658,12 +701,6 @@ void PlayEffect()
     {
       EffectSteep= 1;
       EffectDir= 1;
-      for (byte i=0; i<LED_COUNT; i++)
-      {
-        LEDData[i].r= 192+random(63);
-        LEDData[i].g= random(255);
-        LEDData[i].b= 16+i;
-      }
       curr= random(255);
       curg= random(255);
       curb= random(255);
@@ -727,42 +764,53 @@ void PlayEffect()
     LEDData[EffectSteep].g= LEDData[EffectSteep].g*2;
     LEDData[EffectSteep].b= LEDData[EffectSteep].b*2;
     break;//end effect 8 
-  case  9:                                            //fire! 8-/
-    EffectSteep= random(LED_COUNT);
-    if (EffectSteep< (LED_COUNT/3))
+  case  9:                                          //sort collor by red
+    if (EffectSteep> (LED_COUNT-1))
     {
-      LEDData[EffectSteep].r= random(200);
-      LEDData[EffectSteep].g= random(128);
-      LEDData[EffectSteep].b= random(EffectFase);
-      EffectFase++;
-      //LEDS.setBrightness(random(LEDBright/2, LEDBright));
-      //randomSeed(EffectFase*EffectFase);
-      
+      EffectSteep= 0;
+      if (EffectDir)
+      {   
+        for(i= 0; i<LED_COUNT; i++)
+        {
+          LEDData[i].r= random(255);
+          LEDData[i].g= random(255);
+          LEDData[i].b= random(255);
+        }
+
+      }       
+      EffectDir= 1;          
     }
-      EffectPeriod= MINEFFECT_PERIOD+ EffectSteep*5;
-      do {
-        if (EffectSteep< (LED_COUNT/3)) EffectSteep= (LED_COUNT/3);
-        curg= EffectSteep-(LED_COUNT/3);
-        curr= GetPrevLED(curg);
-        curb= GetNextLED(curg);
-        int tc= LEDData[curr].r+LEDData[curg].r+LEDData[curb].r;
-        tc= (tc+ LEDData[EffectSteep].r)/4;
-        LEDData[EffectSteep].r= tc;
-        tc= LEDData[curr].g+LEDData[curg].g+LEDData[curb].g;
-        tc= (tc+LEDData[EffectSteep].g)/4;
-        LEDData[EffectSteep].g= tc;
-        tc= LEDData[curr].b +LEDData[curg].b +LEDData[curb].b;
-        tc= (tc+LEDData[EffectSteep].b)/4;
-        LEDData[EffectSteep].b= tc;
-        EffectSteep= EffectSteep+ (LED_COUNT/3);
-      }
-      while (EffectSteep<LED_COUNT);
+
+    if (LEDData[EffectSteep].r > LEDData[GetNextLED(EffectSteep)].r)
+    {
+      EffectDir= 0;
+      curr= LEDData[EffectSteep].r;
+      curg= LEDData[EffectSteep].g;
+      curb= LEDData[EffectSteep].b;
+      LEDData[EffectSteep]= LEDData[GetNextLED(EffectSteep)];
+      LEDData[GetNextLED(EffectSteep)].r= curr;
+      LEDData[GetNextLED(EffectSteep)].g= curg;
+      LEDData[GetNextLED(EffectSteep)].b= curb;
+    }
+
+    EffectSteep++;   
     break;//end effect 9 
   }//end switch
 
   LEDS.show();
   RefreshLEDAt= millis()+EffectPeriod;
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 
